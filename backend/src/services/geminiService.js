@@ -1,16 +1,22 @@
 import OpenAI from 'openai'
 
-const openai = new OpenAI({
-  baseURL: 'https://api.groq.com/openai/v1',
-  apiKey: process.env.GROQ_API_KEY,
-})
+let openai = null
+function getAI() {
+  if (!openai && process.env.GROQ_API_KEY) {
+    openai = new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: process.env.GROQ_API_KEY })
+  }
+  return openai
+}
 
 export async function analyzeTask(task) {
+  const deadline = new Date(task.deadline)
+  const now = new Date()
+  const daysRemaining = Math.max(1, Math.ceil((deadline - now) / (1000 * 60 * 60 * 24)))
+  const planDays = Math.min(daysRemaining, 5)
+
   try {
-    const deadline = new Date(task.deadline)
-    const now = new Date()
-    const daysRemaining = Math.max(1, Math.ceil((deadline - now) / (1000 * 60 * 60 * 24)))
-    const planDays = Math.min(daysRemaining, 5)
+    const ai = getAI()
+    if (!ai) return fallbackAnalysis(task)
 
     const prompt = `You are a deadline risk analyst. Analyze this task and return ONLY valid JSON:
 {
@@ -23,7 +29,7 @@ export async function analyzeTask(task) {
 Respond with JSON: { "riskScore": 0-95, "riskLevel": "LOW|MEDIUM|HIGH", "reason": "why", "recommendation": "what to do", "plan": ["Day 1: ...", "Day 2: ...", ...] }
 Risk factors: difficulty, priority, time remaining. Generate a realistic day-by-day plan with exactly ${planDays} day${planDays > 1 ? 's' : ''}.`
 
-    const res = await openai.chat.completions.create({
+    const res = await ai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: prompt }],
       temperature: 0.3,
@@ -46,7 +52,10 @@ export async function chatWithAI(message, tasks = []) {
         ).join('\n')
       : 'No tasks yet.'
 
-    const res = await openai.chat.completions.create({
+    const ai = getAI()
+    if (!ai) return fallbackChat(message, tasks)
+
+    const res = await ai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
       messages: [
         {
